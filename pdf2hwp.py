@@ -1,6 +1,6 @@
 """PDF -> 한글: hwp2pdf.py 로 만든 PDF에 첨부된 원본 한글 파일을 꺼낸다.
 
-    python pdf2hwp.py 보고서.pdf [-o 폴더또는파일] [--open]
+    python pdf2hwp.py 보고서.pdf [-o 폴더또는파일] [--no-open]
 
 꺼낸 파일은 SHA-256 으로 원본과 같은지 확인한다. 같은 이름 파일이 있으면 덮어쓰지 않고 ' (복구)'를 붙인다.
 """
@@ -56,14 +56,14 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="hwp2pdf 로 만든 PDF에서 원본 한글 파일 되살리기")
     ap.add_argument("inputs", nargs="+")
     ap.add_argument("-o", "--output", help="저장할 폴더 또는 파일 경로")
-    ap.add_argument("--open", action="store_true", help="꺼낸 뒤 한글로 열기")
+    ap.add_argument("--no-open", action="store_true", help="꺼낸 한글 파일을 자동으로 열지 않음")
     a = ap.parse_args(argv)
     failed = 0
     for p in a.inputs:
         try:
             out = restore(p, a.output)
-            if a.open:
-                os.startfile(out)
+            if not a.no_open:
+                os.startfile(out)   # 한글로 연다
         except Exception as e:
             failed += 1
             print("  실패(%s): %s" % (os.path.basename(p), e))

@@ -11,15 +11,16 @@
 - Python 3, 그리고 `pip install -r requirements.txt`
 
 ## 쓰는 법
-- **한글 → PDF**: 한글 파일을 `한글을 PDF로.bat` 위에 끌어다 놓는다. 같은 폴더에 PDF가 생긴다.
-- **PDF → 한글**: 이 도구로 만든 PDF를 `PDF를 한글로.bat` 위에 끌어다 놓는다. 원본 한글 파일이 같은 폴더에 생긴다.
+- **한글 → PDF**: 한글 파일을 `한글을 PDF로.bat` 위에 끌어다 놓는다. 같은 폴더에 PDF가 생기고 바로 열린다.
+- **PDF → 한글**: 이 도구로 만든 PDF를 `PDF를 한글로.bat` 위에 끌어다 놓는다. 원본 한글 파일이 같은 폴더에 생기고 한글로 열린다.
 - 같은 이름의 파일이 있으면 덮어쓰지 않고 이름 뒤에 ` (2)`나 ` (복구)`를 붙인다.
 
 명령줄로 쓸 때:
 ```
-python hwp2pdf.py 보고서.hwp [-o 결과.pdf] [--eq unicode|latex|hwp] [--no-embed]
-python pdf2hwp.py 보고서.pdf [-o 폴더]
+python hwp2pdf.py 보고서.hwp [-o 결과.pdf] [--eq unicode|latex|hwp] [--no-embed] [--no-open]
+python pdf2hwp.py 보고서.pdf [-o 폴더] [--no-open]
 ```
+- `--no-open`: 다 만든 파일을 자동으로 열지 않는다.
 - `--eq`: 수식을 복사했을 때 나오는 형식. `unicode`(기본), `latex`, `hwp`(한글 수식 스크립트) 중 하나.
 - `--no-embed`: 원본 한글 파일을 넣지 않는다(아래 주의 참고).
 

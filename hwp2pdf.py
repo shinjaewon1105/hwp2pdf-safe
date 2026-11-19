@@ -93,6 +93,7 @@ def main(argv=None):
                     help="수식을 긁었을 때 나올 글: unicode(기본, 읽기 좋은 한 줄), latex, hwp(한글 수식 스크립트)")
     ap.add_argument("--no-embed", action="store_true", help="원본 한글 파일을 첨부하지 않음(복구 불가)")
     ap.add_argument("--no-check", action="store_true", help="결과 검사 생략")
+    ap.add_argument("--no-open", action="store_true", help="다 만든 PDF를 자동으로 열지 않음")
     ap.add_argument("--overwrite", action="store_true", help="같은 이름 PDF가 있으면 덮어씀(기본은 ' (2)' 붙임)")
     a = ap.parse_args(argv)
     if a.output and len(a.inputs) > 1:
@@ -109,6 +110,8 @@ def main(argv=None):
         print("[%s]" % os.path.basename(src))
         try:
             convert(src, out, a.eq, not a.no_embed, not a.no_check)
+            if not a.no_open:
+                os.startfile(out)   # 기본 PDF 보기 프로그램으로 연다
         except Exception as e:
             failed += 1
             print("  실패: %s: %s" % (type(e).__name__, e))
