@@ -40,6 +40,39 @@ def extract_pdfium(path):
         doc.close()
 
 
+def missing_breaks_pdfium(path):
+    """PDFium 글자 좌표로 '아래 줄 왼쪽으로 넘어갔는데 엔터가 없는 곳'을 센다. (빠진 곳 수, 줄 바뀐 수)"""
+    try:
+        import ctypes
+        import pypdfium2 as pdfium
+        import pypdfium2.raw as raw
+    except ImportError:
+        return None
+    doc = pdfium.PdfDocument(path)
+    missed = lines = 0
+    try:
+        for pno in range(len(doc)):
+            tp = doc[pno].get_textpage()
+            prev, brk = None, False
+            for i in range(tp.count_chars()):
+                u = chr(raw.FPDFText_GetUnicode(tp.raw, i))
+                if u in "\r\n":
+                    brk = True
+                    continue
+                if raw.FPDFText_IsGenerated(tp.raw, i) or u.isspace():
+                    continue
+                x, y = ctypes.c_double(), ctypes.c_double()
+                raw.FPDFText_GetCharOrigin(tp.raw, i, x, y)
+                if prev is not None and abs(y.value - prev[1]) > 6 and x.value < prev[0]:
+                    lines += 1
+                    missed += not brk
+                prev, brk = (x.value, y.value), False
+            tp.close()
+    finally:
+        doc.close()
+    return missed, lines
+
+
 def render_diff(path_a, path_b, dpi=110):
     """쪽마다 회색조로 그려서 많이 다른 화소 비율(최댓값)"""
     import pymupdf
@@ -78,6 +111,12 @@ def check(pdf_a, out, eq_texts, summary, log=print):
         hit = sum(min(c, flat.count(t)) for t, c in need.items())
         res[engine] = {"bad": bad, "eq_found": hit, "eq_total": len(placed)}
         log("  검사 - %s 글자 뽑기: 깨진 글자 %d개, 수식 글 %d/%d개 그대로 나옴" % (engine, bad, hit, len(placed)))
+        if engine.startswith("PDFium"):
+            mb = missing_breaks_pdfium(out)
+            if mb is not None:
+                res["missing_breaks"] = mb[0]
+                log("  검사 - PDFium 줄바꿈: 줄 바뀌는 곳 %d곳 중 엔터 빠진 곳 %d곳%s" % (
+                    mb[1], mb[0], "" if mb[0] == 0 else "  ! 확인 필요"))
     with pikepdf.open(out) as pdf:
         found = embed.find_original(pdf)
     if found:

@@ -75,6 +75,9 @@ def main():
             if verify._bad_chars(full):
                 ok = False
                 print("  실패(%s): 깨진 글자 %d개" % (name, verify._bad_chars(full)))
+        if rep["verify"].get("missing_breaks"):
+            ok = False
+            print("  실패: PDFium에서 줄바꿈 %d곳이 빠짐" % rep["verify"]["missing_breaks"])
         if rep["verify"]["render_diff"] > 0.002:
             ok = False
             print("  실패: 모양이 한컴 PDF와 다름")

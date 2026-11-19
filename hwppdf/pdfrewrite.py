@@ -421,6 +421,31 @@ def same_structure(ops_a, ops_b):
     return True
 
 
+_NORM_OK = {"Tf", "Tm", "TJ", "Tj", "Tc", "Tw", "Tz", "TL", "Ts", "Tr", "w", "J", "j", "M", "d", "ri", "i",
+            "g", "rg", "k", "G", "RG", "K", "cs", "CS", "sc", "scn", "SC", "SCN", "gs", "BDC", "BMC", "EMC"}
+
+
+def _normalizable_blocks(ops, marks):
+    """배율을 옮겨 써도 되는 BT 번호들: 수식이 없고 줄 이동 연산(Td, T*, ', ")이 없는 글자 덩어리"""
+    out = set()
+    start = None
+    ok = True
+    for i, inst in enumerate(ops):
+        if isinstance(inst, pikepdf.ContentStreamInlineImage):
+            ok = False
+            continue
+        op = str(inst[1])
+        if op == "BT":
+            start, ok = i, True
+        elif op == "ET":
+            if start is not None and ok:
+                out.add(start)
+            start = None
+        elif start is not None and (op not in _NORM_OK or i in marks):
+            ok = False
+    return out
+
+
 # ---------------------------------------------------------------- 쪽 다시 쓰기
 class GState:
     __slots__ = ("ctm", "tc", "tw", "th", "tl", "font", "fs", "tr", "ts", "lw")
@@ -498,8 +523,15 @@ class PageRewriter:
         def raw(s):
             out.append(("raw", s.encode("latin-1") if isinstance(s, str) else s))
 
-        def text_matrix_now():
-            return tm
+        normalizable = _normalizable_blocks(ops, self.marks)
+        norm = None                   # (sx, sy): 이 글자 덩어리의 축소 배율을 글자 크기로 옮겨 쓰는 중
+
+        def emit_state(g, sx, sy):
+            s = "%s Tz %s Tc %s Tw %s TL %s Ts" % (fmt(g.th * 100 * sx / sy), fmt(g.tc * sy), fmt(g.tw * sy),
+                                                   fmt(g.tl * sy), fmt(g.ts * sy))
+            if g.font:
+                s += " %s %s Tf" % (g.font, fmt(g.fs * sy))
+            raw(s + "\n")
 
         for i, inst in enumerate(ops):
             if isinstance(inst, pikepdf.ContentStreamInlineImage):
@@ -519,28 +551,53 @@ class PageRewriter:
                 g.ctm = mul(tuple(_num(v) for v in operands), g.ctm); out.append(inst); continue
             if op == "w":
                 g.lw = _num(operands[0]); out.append(inst); continue
-            if op == "Tc":
-                g.tc = _num(operands[0]); out.append(inst); continue
-            if op == "Tw":
-                g.tw = _num(operands[0]); out.append(inst); continue
-            if op == "Tz":
-                g.th = _num(operands[0]) / 100.0; out.append(inst); continue
-            if op == "TL":
-                g.tl = _num(operands[0]); out.append(inst); continue
-            if op == "Tf":
-                g.font, g.fs = str(operands[0]), _num(operands[1]); out.append(inst); continue
+            if op in ("Tc", "Tw", "Tz", "TL", "Tf", "Ts"):
+                if op == "Tc":
+                    g.tc = _num(operands[0])
+                elif op == "Tw":
+                    g.tw = _num(operands[0])
+                elif op == "Tz":
+                    g.th = _num(operands[0]) / 100.0
+                elif op == "TL":
+                    g.tl = _num(operands[0])
+                elif op == "Tf":
+                    g.font, g.fs = str(operands[0]), _num(operands[1])
+                else:
+                    g.ts = _num(operands[0])
+                if norm:
+                    emit_state(g, *norm)
+                else:
+                    out.append(inst)
+                continue
             if op == "Tr":
                 g.tr = int(operands[0]); out.append(inst); continue
-            if op == "Ts":
-                g.ts = _num(operands[0]); out.append(inst); continue
             if op == "BT":
                 in_text, opened, dirty = True, True, False
                 tm = tlm = I
-                out.append(inst); continue
+                a, b, c, d = g.ctm[:4]
+                if i in normalizable and abs(b) < 1e-9 and abs(c) < 1e-9 and \
+                        (abs(abs(a) - 1) > 0.02 or abs(abs(d) - 1) > 0.02) and abs(a) > 1e-6 and abs(d) > 1e-6:
+                    # 한컴 PDF는 글자를 92pt로 쓰고 0.12배로 줄인다. 그림은 같게 두고 '11pt를 1배로' 다시 쓴다.
+                    # PDFium(크롬·엣지)의 줄바꿈·띄어쓰기 판단이 이 배율 때문에 틀어지는 것을 막는다.
+                    norm = (abs(a), abs(d))
+                    raw("q\n")
+                    out.append(inst)
+                    emit_state(g, *norm)
+                else:
+                    out.append(inst)
+                continue
             if op == "ET":
                 if opened:
                     out.append(inst)
+                if norm:
+                    raw("Q\n")
+                    norm = None
                 in_text = opened = dirty = False
+                continue
+            if op == "Tm" and norm:
+                tm = tlm = tuple(_num(v) for v in operands)
+                sx, sy = norm
+                raw("%s Tm\n" % mat_str((tm[0] / sx, tm[1] / sx, tm[2] / sy, tm[3] / sy, tm[4], tm[5])))
                 continue
             if op in ("Tm", "Td", "TD", "T*"):
                 if op == "Tm":
@@ -627,6 +684,7 @@ class PageRewriter:
                 continue
             out.append(inst)
 
+        self.final_ctm = g.ctm
         self._fill_placeholders(out)
         return self._serialize(out)
 
@@ -724,6 +782,25 @@ class PageRewriter:
             ph[0] = "raw"; ph[1] = s.encode("latin-1")
             self.placed.append((k, text, grp.bbox))
 
+    def horizontal_anchor(self):
+        """쪽 맨 아래에 본문 폭만큼 넓은 투명 공백 하나.
+
+        PDFium(크롬·엣지)은 쪽의 글자 상자들이 가로로 얼마나 빈틈없이 덮는지 보고 가로쓰기/세로쓰기를 정한다.
+        표가 많은 쪽은 글이 열마다 세로로 늘어서 세로쓰기로 판정되고, 그러면 '1', '2' 같은 한 글자 칸에서
+        줄바꿈이 빠진다. 가로를 다 덮는 글자 하나를 두면 가로쓰기로 판정된다.
+        """
+        if not self.body_glyphs:
+            return b""
+        x0 = min(b[1] for b in self.body_glyphs)
+        x1 = max(b[2] for b in self.body_glyphs)
+        if x1 - x0 < 10:
+            return b""
+        size = 4.0
+        tz = 100.0 * (x1 - x0) / (0.5 * size)
+        return ("\nq %s cm BT %s %s Tf 3 Tr %s Tz 1 0 0 1 %s 2 Tm <0020> Tj ET Q\n" % (
+            mat_str(inv(getattr(self, "final_ctm", I))), self.inv_font_name, fmt(size), fmt(tz),
+            fmt(x0))).encode("latin-1")
+
     def _baseline(self, grp):
         x0, y0, x1, y1 = grp.bbox
         h = max(y1 - y0, 1.0)
@@ -774,15 +851,8 @@ def rewrite_pdf(pdf_a, pdf_b, eq_texts, log):
         ops_b = pikepdf.parse_content_stream(pb)
         if not same_structure(ops_a, ops_b):
             raise RuntimeError("%d쪽: 표식 PDF와 연산 순서가 달라 수식 위치를 맞출 수 없습니다" % (pno + 1))
+        # 수식이 없는 쪽도 다시 쓴다: 글자 배율 정리와 가로쓰기 기준 글자(줄바꿈 누락 막기)
         marks = scan_markers(ops_b)
-        if not marks:
-            summary["pages"].append({"page": pno + 1, "equations": 0})
-            # 본문 글자는 깨진 글자 검사용으로만 훑는다
-            rw = PageRewriter(pdf_a, pa, {}, font_cache, "/HwpPdfText")
-            rw.eq_texts = {}
-            rw.rewrite(ops_a)
-            summary["text_runs"].append(rw.text_runs)
-            continue
         res = pa.obj.get("/Resources")
         if res is None:
             pa.obj.Resources = res = pikepdf.Dictionary()
@@ -796,7 +866,7 @@ def rewrite_pdf(pdf_a, pdf_b, eq_texts, log):
         res.Font[name] = inv_font
         rw = PageRewriter(pdf_a, pa, marks, font_cache, name)
         rw.eq_texts = eq_texts
-        data = rw.rewrite(ops_a)
+        data = rw.rewrite(ops_a) + rw.horizontal_anchor()
         pa.obj.Contents = pdf_a.make_stream(data)
         summary["located"].update(rw.groups.keys())
         summary["problems"] += ["%d쪽: %s" % (pno + 1, p) for p in dict.fromkeys(rw.problems)]

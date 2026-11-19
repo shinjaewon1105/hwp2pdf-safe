@@ -3,3 +3,5 @@ pikepdf
 pymupdf
 fonttools
 pypdfium2
+pywin32
+tkinterdnd2

@@ -620,6 +620,8 @@ def to_latex(script):
 
 
 def convert(script, mode="unicode"):
+    if mode == "none":          # 수식은 모양만 두고 복사되지 않게
+        return ""
     if mode == "latex":
         return to_latex(script)
     if mode == "hwp":

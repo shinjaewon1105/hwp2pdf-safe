@@ -62,7 +62,10 @@ def convert(src, out, eq_mode="unicode", embed_src=True, check=True, log=print):
         os.makedirs(os.path.dirname(os.path.abspath(out)) or ".", exist_ok=True)
         shutil.copyfile(work, out)
 
-        log("  수식 %d개 중 %d개를 PDF에서 찾아 글자층을 넣음" % (len(scripts), report["located"]))
+        if eq_mode == "none":
+            log("  수식 %d개 중 %d개를 찾아 모양만 남김(복사 안 됨)" % (len(scripts), report["located"]))
+        else:
+            log("  수식 %d개 중 %d개를 PDF에서 찾아 글자층을 넣음" % (len(scripts), report["located"]))
         if missing:
             log("  ! 못 찾은 수식 번호: %s (머리말·글상자 안 개체 묶음 등)" % missing[:20])
         for p in summary["problems"][:10]:
@@ -89,8 +92,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="한글 문서를 '되살릴 수 있고 글·수식이 안 깨지는' PDF로")
     ap.add_argument("inputs", nargs="+", help=".hwp / .hwpx 파일")
     ap.add_argument("-o", "--output", help="결과 PDF 경로(입력이 하나일 때)")
-    ap.add_argument("--eq", choices=["unicode", "latex", "hwp"], default="unicode",
-                    help="수식을 긁었을 때 나올 글: unicode(기본, 읽기 좋은 한 줄), latex, hwp(한글 수식 스크립트)")
+    ap.add_argument("--eq", choices=["unicode", "latex", "hwp", "none"], default="unicode",
+                    help="수식을 긁었을 때 나올 글: unicode(기본, 읽기 좋은 한 줄), latex, hwp(한글 수식 스크립트), none(모양만, 복사 안 됨)")
     ap.add_argument("--no-embed", action="store_true", help="원본 한글 파일을 첨부하지 않음(복구 불가)")
     ap.add_argument("--no-check", action="store_true", help="결과 검사 생략")
     ap.add_argument("--no-open", action="store_true", help="다 만든 PDF를 자동으로 열지 않음")

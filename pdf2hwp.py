@@ -28,7 +28,7 @@ def free_name(path, tag=" (복구)"):
     return cand
 
 
-def restore(pdf_path, out=None, log=print):
+def restore(pdf_path, out=None, log=print, overwrite=False):
     with pikepdf.open(pdf_path) as pdf:
         found = embed.find_original(pdf)
     if found is None:
@@ -41,7 +41,8 @@ def restore(pdf_path, out=None, log=print):
         out = os.path.join(os.path.dirname(os.path.abspath(pdf_path)), name)
     elif os.path.isdir(out):
         out = os.path.join(out, name)
-    out = free_name(out)
+    if not overwrite:
+        out = free_name(out)
     with open(out, "wb") as f:
         f.write(data)
     log("  %s -> %s (%d바이트, SHA-256 %s)" % (os.path.basename(pdf_path), out, len(data),
